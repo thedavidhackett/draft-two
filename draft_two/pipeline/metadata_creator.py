@@ -1,21 +1,23 @@
 import os
 import argparse
+import sys
 from datetime import datetime
 
 def get_validated_input(prompt, validation_func, error_message):
     """Generic function to get validated user input."""
     while True:
-        user_input = input(prompt).strip()
+        print(prompt, end='', flush=True)
+        user_input = sys.stdin.readline().strip()
         if validation_func(user_input):
             return user_input
         else:
-            print(error_message)
+            print(error_message, flush=True)
 
 def get_choice_from_options(prompt, options):
     """Gets a user's choice from a list of options."""
-    print(prompt)
+    print(prompt, flush=True)
     for i, option in enumerate(options, 1):
-        print(f"{i}. {option}")
+        print(f"{i}. {option}", flush=True)
 
     def is_valid_choice(user_input):
         return user_input.isdigit() and 1 <= int(user_input) <= len(options)
@@ -41,7 +43,7 @@ def get_yes_no_input(prompt):
 
 def main(filename, output="data/metadata"):
     """Main function to gather metadata and write to a file."""
-    print("Please provide the following information for the incident report.")
+    print("Please provide the following information for the incident report.", flush=True)
 
     # Incident Type
     incident_types = [
@@ -61,7 +63,9 @@ def main(filename, output="data/metadata"):
 
     charge_severities = ["Misdemeanor", "Felony", "Infraction", "No Charges"]
 
-    incident_date = input(f"Enter the incident date (YYYY-MM-DD, default: today): ").strip() or datetime.now().strftime('%Y-%m-%d')
+    print(f"Enter the incident date (YYYY-MM-DD, default: today): ", end='', flush=True)
+    incident_date = sys.stdin.readline().strip() or datetime.now().strftime('%Y-%m-%d')
+    
     incident_type = get_choice_from_options("\nSelect the incident type:", incident_types)
     charge_severity = get_choice_from_options("\nSelect the charge severity:", charge_severities)
     arrest_made = get_yes_no_input("\nWas an arrest made?")
@@ -74,7 +78,7 @@ def main(filename, output="data/metadata"):
     }
 
     if not filename:
-        print("Filename cannot be empty. Exiting.")
+        print("Filename cannot be empty. Exiting.", flush=True)
         return
 
     if not os.path.exists(output):
@@ -86,9 +90,9 @@ def main(filename, output="data/metadata"):
         with open(output_path, 'w') as f:
             for key, value in metadata.items():
                 f.write(f"{key}: {value}\n")
-        print(f"\nMetadata successfully saved to {output_path}")
+        print(f"\nMetadata successfully saved to {output_path}", flush=True)
     except IOError as e:
-        print(f"Error writing to file: {e}")
+        print(f"Error writing to file: {e}", flush=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Create metadata details for an incident report.')
