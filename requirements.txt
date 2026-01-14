@@ -1,0 +1,7 @@
+yt-dlp
+moviepy
+modal
+whisperx
+pyannote.audio
+python-dotenv
+openai
