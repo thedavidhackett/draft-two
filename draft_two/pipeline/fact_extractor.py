@@ -3,19 +3,17 @@ import argparse
 import json
 import time
 import tempfile
+import csv
 from openai import OpenAI
 from dotenv import load_dotenv
 
-def process_batch(
-        text_file_path: str,
-        instructions_file_path: str,
-        output_path: str = 'data/ai_police_reports',
-        num_repeats: int = 5,
-        metadata_file_path: str = None
+def extract_facts_in_batch(
+        input_folder_path: str,
+        output_path: str = 'data/atomic_facts',
     ):
     """
-    Creates an OpenAI batch job to process a text file based on instructions,
-    waits for completion, and saves the result.
+    Creates an OpenAI batch job to extract atomic facts from each text file in a folder,
+    waits for completion, and saves the results to CSV files.
     """
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
@@ -26,54 +24,46 @@ def process_batch(
 
     client = OpenAI(api_key=api_key)
 
-    base_filename = os.path.splitext(os.path.basename(text_file_path))[0]
-
-    # 1. Read input files
+    # 1. Read input files from the folder
     try:
-        with open(instructions_file_path, 'r') as f:
-            system_prompt = f.read()
-        with open(text_file_path, 'r') as f:
-            text_content = f.read()
-
-        # Handle metadata
-        if metadata_file_path is None:
-            metadata_file_path = f"data/metadata/{base_filename}_metadata.txt"
-            print(f"No metadata file provided. Using default path: {metadata_file_path}")
-
-        try:
-            with open(metadata_file_path, 'r') as f:
-                metadata_content = f.read()
-        except FileNotFoundError:
-            metadata_content = ""
-            print(f"Warning: Metadata file not found at {metadata_file_path}. Proceeding without metadata.")
-
-        user_prompt = (
-            "Based on the following metadata and transcript write a police report\n"
-            f"Metadata:\n{metadata_content}\n"
-            f"Transcript:\n{text_content}"
-        )
-
-    except FileNotFoundError as e:
-        print(f"Error: Input file not found - {e}")
+        files_to_process = [f for f in os.listdir(input_folder_path) if f.endswith('.txt')]
+        if not files_to_process:
+            print(f"No .txt files found in {input_folder_path}")
+            return
+    except FileNotFoundError:
+        print(f"Error: Input folder not found - {input_folder_path}")
         return
 
     # 2. Prepare batch data
     batch_requests = []
-    for i in range(num_repeats):
+    for filename in files_to_process:
+        file_path = os.path.join(input_folder_path, filename)
+        try:
+            with open(file_path, 'r') as f:
+                text_content = f.read()
+        except FileNotFoundError:
+            print(f"Warning: Could not read file {file_path}. Skipping.")
+            continue
+
+        base_filename = os.path.splitext(filename)[0]
+        user_prompt = f"Please breakdown the following report into independent facts: {text_content}"
+
         request = {
-            "custom_id": f"{base_filename}-{i+1}",
+            "custom_id": base_filename,
             "method": "POST",
             "url": "/v1/chat/completions",
             "body": {
-                "model": "gpt-4-turbo",
+                "model": "gpt-5.2",
                 "messages": [
-                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0
             }
         }
         batch_requests.append(request)
+
+    if not batch_requests:
+        print("No valid requests to process.")
+        return
 
     # 3. Upload batch file
     with tempfile.NamedTemporaryFile(mode='w+b', suffix=".jsonl") as temp_batch_file:
@@ -82,7 +72,7 @@ def process_batch(
 
         temp_batch_file.seek(0)
 
-        print(f"Batch data for {num_repeats} requests prepared in a temporary file.")
+        print(f"Batch data for {len(batch_requests)} requests prepared in a temporary file.")
 
         print("Uploading batch file to OpenAI...")
         batch_input_file = client.files.create(
@@ -128,12 +118,11 @@ def process_batch(
     result_content_response = client.files.content(output_file_id)
     result_content = result_content_response.read().decode('utf-8')
 
-    # Create a dedicated folder for the results
-    output_folder_path = os.path.join(output_path, base_filename)
-    if not os.path.exists(output_folder_path):
-        os.makedirs(output_folder_path)
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
-    print(f"Saving results to folder: {output_folder_path}")
+    print(f"Saving results to folder: {output_path}")
     try:
         # The result content is a JSONL file.
         lines = result_content.strip().split('\n')
@@ -142,36 +131,36 @@ def process_batch(
             custom_id = json_line.get('custom_id', 'unknown_request')
             content = json_line['response']['body']['choices'][0]['message']['content']
             
-            # Create a separate file for each result
-            output_filename = os.path.join(output_folder_path, f"{custom_id}.txt")
-            with open(output_filename, 'w') as f:
-                f.write(content)
+            # The content should be a list of facts, separated by newlines
+            facts = [fact.strip() for fact in content.strip().split('\n') if fact.strip()]
+            
+            # Create a separate CSV file for each result
+            output_filename = os.path.join(output_path, f"{custom_id}.csv")
+            with open(output_filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Fact"]) # Header
+                for fact in facts:
+                    writer.writerow([fact])
 
-        print("All results saved in separate files.")
+        print("All results saved in separate CSV files.")
 
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         print(f"Error parsing result file: {e}")
         print("Saving raw result content for debugging...")
-        raw_error_path = os.path.join(output_folder_path, "raw_error_output.txt")
+        input_folder_name = os.path.basename(input_folder_path)
+        raw_error_path = os.path.join(output_path, f"raw_error_output_{input_folder_name}.txt")
         with open(raw_error_path, 'w') as f:
             f.write(result_content)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Submit a text file and instructions to OpenAI for batch processing.')
-    parser.add_argument('text_file', help='Path to the text file to be processed.')
-    parser.add_argument('-i', '--instructions_file', default='data/raw/instructions.txt', help='Path to the file containing instructions for the model.')
-    parser.add_argument('-o', '--output', default='data/ai_police_reports', help='The output directory for the processed file.')
-    parser.add_argument('-n', '--num_repeats', type=int, default=5, help='Number of times to repeat the request in the batch.')
-    parser.add_argument('-m', '--metadata_file', help='Path to the metadata file.')
+    parser = argparse.ArgumentParser(description='Extract atomic facts from text files in a folder using OpenAI batch processing.')
+    parser.add_argument('input_folder', help='Path to the folder containing text files to be processed.')
+    parser.add_argument('-o', '--output', default='data/atomic_facts', help='The output directory for the processed CSV files.')
 
     args = parser.parse_args()
     
-    process_batch(
-        args.text_file, 
-        args.instructions_file, 
+    extract_facts_in_batch(
+        args.input_folder, 
         args.output, 
-        args.num_repeats,
-        args.metadata_file
     )
-
