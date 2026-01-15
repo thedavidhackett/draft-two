@@ -1,15 +1,19 @@
 
-import os
 import argparse
+import os
 import subprocess
 from urllib.parse import urlparse
 
-def is_youtube_url(url):
+def _is_youtube_url(url : str) -> bool:
     """Check if the given URL is a YouTube URL."""
     parsed_url = urlparse(url)
     return parsed_url.netloc.endswith('youtube.com') or parsed_url.netloc.endswith('youtu.be')
 
-def extract_audio_from_youtube(url, filename=None, output_path='data/audio'):
+def _extract_audio_from_youtube(
+        url : str, 
+        filename : str = None, 
+        output_path : str ='data/audio'
+    ) -> None:
     """
     Downloads audio from a YouTube URL.
     Uses yt-dlp to download the audio from the given YouTube URL.
@@ -41,7 +45,11 @@ def extract_audio_from_youtube(url, filename=None, output_path='data/audio'):
         print("Please install it using: pip install yt-dlp")
 
 
-def extract_audio_from_mp4(file_path, filename=None, output_path='data/audio'):
+def _extract_audio_from_mp4(
+        file_path : str, 
+        filename : str = None, 
+        output_path : str ='data/audio'
+    ):
     """
     Extracts audio from an MP4 file.
     Uses moviepy to extract the audio from the given MP4 file.
@@ -83,15 +91,19 @@ def extract_audio_from_mp4(file_path, filename=None, output_path='data/audio'):
     print(f"Audio extracted from {file_path} and saved as {output_filename}")
 
 
-def extract_audio(source, filename=None, output_path='data/audio'):
+def extract_audio(
+        source : str, 
+        filename : str = None, 
+        output_path : str = 'data/audio'
+    ):
     """
     Extracts audio from a YouTube URL or an MP4 file.
     This is the main exportable function.
     """
-    if is_youtube_url(source):
-        extract_audio_from_youtube(source, filename, output_path)
+    if _is_youtube_url(source):
+        _extract_audio_from_youtube(source, filename, output_path)
     elif os.path.isfile(source) and source.lower().endswith('.mp4'):
-        extract_audio_from_mp4(source, filename, output_path)
+        _extract_audio_from_mp4(source, filename, output_path)
     else:
         print(f"Error: Unsupported source type or file not found: {source}")
         print("Please provide a valid YouTube URL or a path to an .mp4 file.")
