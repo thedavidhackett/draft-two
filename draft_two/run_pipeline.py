@@ -38,15 +38,10 @@ def run_command(command):
         sys.exit(1)
 
 def main():
-
     parser = argparse.ArgumentParser(description="Orchestrates the full data processing pipeline.")
-
     parser.add_argument("source", help="The source YouTube URL or local .mp4 file path.")
-
     parser.add_argument("filename", help="The base filename (without extension) to use for all generated files.")
-
     parser.add_argument("-i", "--instructions_file", default="data/raw/instructions.txt", help="Path to the instructions file for the batch processor.")
-
     parser.add_argument("-r", "--num_repeats", type=int, default=5, help="Number of times to repeat the request in the batch processor.")
 
 
@@ -81,7 +76,7 @@ def main():
 
     audio_file_path = os.path.join(audio_output_dir, f"{args.filename}.mp3")
 
-    text_file_path = os.path.join(transcribed_text_output_dir, f"{args.filename}.txt")
+    text_folder_path = os.path.join(transcribed_text_output_dir, args.filename)
 
     metadata_file_path = os.path.join(metadata_output_dir, f"{args.filename}_metadata.txt")
 
@@ -125,7 +120,9 @@ def main():
 
         "-f", args.filename,
 
-        "-o", transcribed_text_output_dir
+        "-o", transcribed_text_output_dir,
+        
+        "-n", str(args.num_repeats)
 
     ]
 
@@ -159,15 +156,14 @@ def main():
 
         python_executable, "draft_two/pipeline/batch_processor.py",
 
-        text_file_path,
+        text_folder_path,
 
         "-i", args.instructions_file,
 
         "-m", metadata_file_path,
 
-        "-o", reports_output_dir,
+        "-o", reports_output_dir
 
-        "-n", str(args.num_repeats)
 
     ]
 
@@ -197,7 +193,6 @@ def main():
 
     print("Pipeline completed successfully!")
 
-    print(f"{'='*20}")
-
+    print(f"{ '='*20}")
 if __name__ == "__main__":
     main()

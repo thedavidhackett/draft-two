@@ -5,3 +5,4 @@ whisperx
 pyannote.audio
 python-dotenv
 openai
+openpyxl

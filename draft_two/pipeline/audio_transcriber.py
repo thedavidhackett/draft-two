@@ -50,46 +50,52 @@ class WhisperXWorker:
         finally:
             os.remove(temp_path)
 
-def main(source: str, output: str = 'data/text_files', filename: str = None):
+def main(source: str, output: str = 'data/text_files', filename: str = None, num_repeats: int = 5):
     """
     Local entrypoint for the audio transcription script.
+    Transcribes an audio file N times and saves each transcription to a separate file
+    in a dedicated folder.
     """
     if not os.path.isfile(source) or not source.lower().endswith('.mp3'):
         print(f"Error: Unsupported file type or file not found: {source}")
         print("Please provide a path to an .mp3 file.")
         return
 
-    if not os.path.exists(output):
-        os.makedirs(output)
+    if not filename:
+        base_name = os.path.basename(source)
+        filename = os.path.splitext(base_name)[0]
+
+    # Create a dedicated output folder for this batch of transcriptions
+    output_folder_path = os.path.join(output, filename)
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
 
     print(f"Reading audio file: {source}")
     with open(source, "rb") as f:
         audio_bytes = f.read()
 
-    print("Submitting transcription job to Modal...")
+    print(f"Submitting {num_repeats} transcription jobs to Modal...")
     worker = WhisperXWorker()
-    segments = worker.process_audio.remote(audio_bytes)
-
-    if not filename:
-        base_name = os.path.basename(source)
-        filename = os.path.splitext(base_name)[0]
-
-    output_filename = os.path.join(output, f"{filename}.txt")
-
-    print(f"Transcription complete. Saving to {output_filename}")
-    with open(output_filename, "w") as f:
-        # Join all segment texts with a space to form a single block of text.
-        full_text = " ".join(segment['text'].strip() for segment in segments)
-        f.write(full_text)
     
-    print("Transcription saved.")
+    # Use .map to run multiple transcriptions in parallel
+    all_segments = worker.process_audio.map([audio_bytes] * num_repeats)
+
+    print(f"Transcription complete. Saving {num_repeats} files to {output_folder_path}")
+    for i, segments in enumerate(all_segments):
+        output_filename = os.path.join(output_folder_path, f"{filename}-{i+1}.txt")
+        with open(output_filename, "w") as f:
+            full_text = " ".join(segment['text'].strip() for segment in segments)
+            f.write(full_text)
+    
+    print(f"All {num_repeats} transcriptions saved.")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Transcribe an audio file using WhisperX on Modal.')
+    parser = argparse.ArgumentParser(description='Transcribe an audio file N times using WhisperX on Modal.')
     parser.add_argument('source', help='A path to an MP3 file.')
-    parser.add_argument('-o', '--output', default='data/text_files', help='The output directory for the text file.')
-    parser.add_argument('-f', '--filename', help='The filename for the output text file (without extension).')
+    parser.add_argument('-o', '--output', default='data/text_files', help='The parent output directory for the transcription folder.')
+    parser.add_argument('-f', '--filename', help='The base filename for the output folder and files.')
+    parser.add_argument('-n', '--num_repeats', type=int, default=5, help='Number of times to transcribe the audio.')
 
     args = parser.parse_args()
     with app.run():
-        main(args.source, output=args.output, filename=args.filename)
+        main(args.source, output=args.output, filename=args.filename, num_repeats=args.num_repeats)

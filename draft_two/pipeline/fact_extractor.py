@@ -3,7 +3,7 @@ import argparse
 import json
 import time
 import tempfile
-import csv
+import openpyxl
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -13,7 +13,7 @@ def extract_facts_in_batch(
     ):
     """
     Creates an OpenAI batch job to extract atomic facts from each text file in a folder,
-    waits for completion, and saves the results to CSV files.
+    waits for completion, and saves the results to a single Excel file with multiple sheets.
     """
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
@@ -118,13 +118,22 @@ def extract_facts_in_batch(
     result_content_response = client.files.content(output_file_id)
     result_content = result_content_response.read().decode('utf-8')
 
-    # Create output directory if it doesn't exist
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    print(f"Saving results to folder: {output_path}")
+    # Define the output Excel filename based on the input folder name
+    input_folder_name = os.path.basename(input_folder_path)
+    output_excel_filename = os.path.join(output_path, f"{input_folder_name}.xlsx")
+    
+    print(f"Saving results to Excel file: {output_excel_filename}")
+    
+    # Create a new Excel workbook
+    wb = openpyxl.Workbook()
+    # Remove the default sheet
+    if "Sheet" in wb.sheetnames:
+        wb.remove(wb["Sheet"])
+
     try:
-        # The result content is a JSONL file.
         lines = result_content.strip().split('\n')
         for line in lines:
             json_line = json.loads(line)
@@ -134,29 +143,32 @@ def extract_facts_in_batch(
             # The content should be a list of facts, separated by newlines
             facts = [fact.strip() for fact in content.strip().split('\n') if fact.strip()]
             
-            # Create a separate CSV file for each result
-            output_filename = os.path.join(output_path, f"{custom_id}.csv")
-            with open(output_filename, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Fact"]) # Header
-                for fact in facts:
-                    writer.writerow([fact])
+            # Create a new sheet for this result, truncating name if too long
+            sheet_name = custom_id
+            if len(sheet_name) > 31:
+                sheet_name = sheet_name[:31]
+            sheet = wb.create_sheet(title=sheet_name)
+            
+            # Write header and facts
+            sheet.cell(row=1, column=1, value="Fact")
+            for i, fact in enumerate(facts, start=2):
+                sheet.cell(row=i, column=1, value=fact)
 
-        print("All results saved in separate CSV files.")
+        wb.save(output_excel_filename)
+        print(f"All results saved to {output_excel_filename}")
 
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         print(f"Error parsing result file: {e}")
         print("Saving raw result content for debugging...")
-        input_folder_name = os.path.basename(input_folder_path)
         raw_error_path = os.path.join(output_path, f"raw_error_output_{input_folder_name}.txt")
         with open(raw_error_path, 'w') as f:
             f.write(result_content)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Extract atomic facts from text files in a folder using OpenAI batch processing.')
+    parser = argparse.ArgumentParser(description='Extract atomic facts from text files into a single Excel file.')
     parser.add_argument('input_folder', help='Path to the folder containing text files to be processed.')
-    parser.add_argument('-o', '--output', default='data/atomic_facts', help='The output directory for the processed CSV files.')
+    parser.add_argument('-o', '--output', default='data/atomic_facts', help='The output directory for the processed Excel file.')
 
     args = parser.parse_args()
     
